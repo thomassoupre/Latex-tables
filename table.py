@@ -27,35 +27,74 @@ class Table(object):
         self.nc = len(self.data[0])
         print parser
         print self.data
-        self.constructLine()
-        print self.formated
+        self.constructGraph()
+        self.generateLatex()
+        print self.graph
 
-    def constructLine(self):
-        def constructSubLine(lines,c,maxv = 2):
+    def constructGraph(self):
+        def constructNode(lines,c,maxv = 2):
             if c>=maxv:
                 return lines
             reval=defaultdict(list)
             for line in lines:
                 reval[line[0]].append(line[1:])
             for line,revalLine in reval.iteritems():
-                reval[line] = constructSubLine(revalLine,c+1)
+                reval[line] = constructNode(revalLine,c+1)
             return reval
-        self.formated = defaultdict(list)
+        self.graph = defaultdict(list)
         for d in self.data[1:]:
-            self.formated[d[0]].append(d[1:])
-        for k,form in self.formated.iteritems():
-            self.formated[k]=constructSubLine(form,1)
+            self.graph[d[0]].append(d[1:])
+        for k,form in self.graph.iteritems():
+            self.graph[k]=constructNode(form,1)
 
+    def generateLatex(self):
+        hlines = [1 for _ in xrange(len(self.data)+1)]
+        def handleNode(node,c0,i0,mat):
+            firstspacer = ' & ' if c0>0 else ''
+            if node and isinstance(node,list):
+                for c,val in zip(range(c0+1,len(mat[0])),node[0][1:]):
+                    mat[i0][c]= ' & '+val
+                print i0,c0 , 'low recursion' 
+                mat[i0][c0]= firstspacer+node[0][0]
+            else:
+                cursum = i0
+                print'node', node
+                for key,val in node.iteritems():
+                    print i0,c0
+                    if len(val) > 1:
+                        mat[cursum][c0] = '%s\\multirow{%d}{%s}'%(firstspacer,len(val),key)
+                    else:
+                        mat[cursum][c0] = '%s%s'%(firstspacer,key)
+                    hlines[cursum] = max(hlines[cursum],c0+1)
+                    print 'HEREEEEEEEEEEEEE',c0,hlines[cursum]
+                    
+                    spacer = (len(mat[cursum][c0]))*' '
+                    print 'a%sa'%spacer
+                    for i in range(1,len(val)):
+                        print 'here ',cursum+i-1
+                        mat[cursum+i][c0] = firstspacer+spacer
+                        hlines[cursum+i] = max(hlines[cursum+i],c0+2)
+                    print key,val
+                    print c0+1,cursum
+                    handleNode(val,c0+1,cursum,mat)
+                    cursum += len(val)
+        #create matrix
+        mat = [[str() for _ in xrange(len(self.data[0]))] for _ in xrange(len(self.data))]
+        handleNode(self.graph,0,0,mat)
+        for l in mat:
+            print ''.join(l)
+        print mat
+        print hlines
+        #concatenate matrix
+"""
+    def calculateColumsNumber(self):
+        self.nc = len(self.data[0])
+        if self.args.columns:
+            self.currentTex+='\n\\begin{tabular}{'+'|c'*self.columns[0]+'||'+'r|'*(nc-self.columns[0]+1)'|}'
+        else:
+            self.currentTex+='\n\\begin{tabular}{'+'|c'*self.columns[0]+'||'+'r|'*(nc-self.columns[0]+1)'}'
 
-
-    # def calculateColumsNumber(self):
-    #     self.nc = len(self.data[0])
-    #     if self.args.columns:
-    #         self.currentTex+='\n\\begin{tabular}{'+'|c'*self.columns[0]+'||'+'r|'*(nc-self.columns[0]+1)'}'
-    #     else:
-    #         self.currentTex+='\n\\begin{tabular}{'+'|c'*self.columns[0]+'||'+'r|'*(nc-self.columns[0]+1)'}'
-
-
+"""
 
 """
 
