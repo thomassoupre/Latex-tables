@@ -6,7 +6,7 @@ import sys
 from collections import defaultdict
 
 class Table(object):
-    """Table for Latex"""
+    """Object for generating LaTeX tables using multirow as needed/asked from a raw data format"""
 
     def __init__(self, args):
 
@@ -16,67 +16,56 @@ class Table(object):
                             help='path to data')
         parser.add_argument('-c','--columns', metavar='N', type=int, nargs=1,
                     help='range of columns which you want to make multirows')
-        parser.add_argument('-t','--truncate', metavar='T', type=int, nargs='?',const = 0,
+        parser.add_argument('-t','--truncate', metavar='T', type=int, nargs='?',const = -1,
                     help='truncate to T values after the decimal point, by default automatic formating to minimal number of zeros')
+        parser.add_argument('-s','--save', metavar='savePath', type=str, nargs=1,
+                    help='to save the table in a file at savePath, turns the program silent')
 
         self.args = parser.parse_args()
         with open(self.args.filename[0],'r') as f:
-            self.data = [line.strip().replace('\t',' ').split() for line in f.readlines()]
-        self.currentTex ="\\begin{table}[H]\n\\begin{center}"
-        self.nc = len(self.data[0])
-        self.nbc = self.nc-1 if self.args.columns is None else self.args.columns[0]
-        self.formatData()
-        # self.constructGraph()
-        # self.generateLatex()
-        self.constructGraph2()
-        # print self.graph
-        self.generateLatex2()
-        with open(self.args.filename[0]+"_table.txt",'w') as f:
-            f.write(self.currentTex)
-        print self.nbc
+            self.data = [line.strip().replace('\t',' ').split() for line in f.readlines()] # getting data from file
+        self.nbc = len(self.data[0])-1 if self.args.columns is None else min(self.args.columns[0],len(self.data[0])-1) # number of column where we should look for mulrirow
+        if self.args.truncate is not None:
+            self.formatData() # trucates floats
+        self.constructGraph() # contruction of the graph of data
+        self.generateLatex() # generate LaTeX code from graph
+        if self.args.save is not None: # save table
+            with open(self.args.save[0],'w') as f:
+                f.write(self.latex)
+            print "LaTeX code is in %s"%self.args.save[0]
+        else:
+            print self.latex
 
     def constructGraph(self):
-        def constructNode(lines,c,maxv = 2):
-            if c>=maxv:
-                return lines
-            reval=defaultdict(list)
-            for line in lines:
-                reval[line[0]].append(line[1:])
-            for line,revalLine in reval.iteritems():
-                reval[line] = constructNode(revalLine,c+1)
-            return reval
-        self.graph = defaultdict(list)
-        for d in self.data[1:]:
-            self.graph[d[0]].append(d[1:])
-        for k,form in self.graph.iteritems():
-            self.graph[k]=constructNode(form,1)
-
-    def constructGraph2(self):
+        """
+            Creates a graph from the data up to the wanted number of columns
+        """
+        if self.nbc == 0:
+            self.graph = (self.data[1:],len(self.data)-1)
+            return
+        graphAndNbOfLeaves = lambda x : (x,sum(l for o,l in x.itervalues())) # returns a tuple of the graph and the nb of leaves
         def constructNode(lines,c,maxv):
+            """
+                Recursive fonction creating a node of the graph
+            """
             if c>=maxv:
                 return (lines,len(lines))
             reval=defaultdict(list)
             for line in lines:
-                reval[line[0]].append(line[1:])
-            cs = 0
-            for line,revalLine in reval.iteritems():
-                reval[line] = constructNode(revalLine,c+1,maxv)
-                cs+=reval[line][1]
-            return (reval,cs)
+                reval[line[0]].append(line[1:]) # creating the leaves
+            return graphAndNbOfLeaves({line:constructNode(revalLine,c+1,maxv) for line,revalLine in reval.iteritems()})
         self.graph = defaultdict(list)
         for d in self.data[1:]:
-            self.graph[d[0]].append(d[1:])
-        cs = 0
-        for k,form in self.graph.iteritems():
-            self.graph[k]=constructNode(form,1,self.nbc)
-            cs += self.graph[k][1]
-            # print self.graph[k]
-        self.graph = (self.graph,cs)
+            self.graph[d[0]].append(d[1:]) # creating the first sons
+        self.graph = graphAndNbOfLeaves({k:constructNode(form,1,self.nbc) for k,form in self.graph.iteritems()})
 
     def formatData(self):
+        """
+            format floats to minimal or wanted values after zeros
+        """
         def formatColumn(dat,col,truncate):
-            if truncate < 1: #change this to 0
-                nbMaxDec = max('{0:g}'.format(float(val))[::-1].find('.') for val in (line[col] for line in dat))
+            if truncate < 0: # Automatic truncate
+                nbMaxDec = max('{0:g}'.format(float(val))[::-1].find('.') for val in (line[col] for line in dat)) # getting needed zeros for truncating
                 form =  '{:.%df}'%max(0,nbMaxDec)
                 for i in xrange(len(dat)):
                     dat[i][col] = form.format(float(dat[i][col]))
@@ -84,164 +73,57 @@ class Table(object):
                 form =  '{:.%df}'%truncate
                 for i in xrange(len(dat)):
                     dat[i][col] = form.format(float(dat[i][col]))
-
         for i,val in enumerate(self.data[1]):
             try:
                 formatColumn(self.data[1:],i,self.args.truncate)
             except Exception as e:
                 continue
-        # print self.data
 
     def generateLatex(self):
-        hlines = [1 for _ in xrange(len(self.data))]
+        """
+            generating latex table from graph of data
+        """
         def handleNode(node,c0,i0,mat,nbColMultiRow):
-            firstspacer = ' & ' if c0>0 else ''
-            if node and isinstance(node,list):
-                for c,val in zip(range(c0+1,len(mat[0])),node[0][1:]):
-                    mat[i0][c]= ' & '+val
-                print i0,c0 , 'low recursion' 
-                mat[i0][c0]= firstspacer+node[0][0]
-            else:
-                cursum = i0
-                # print'node', node
-                for key,val in node.iteritems():
-                    print i0,c0
-                    if len(val) > 1:
-                        mat[cursum][c0] = '%s\\multirow{%d}{*}{%s}'%(firstspacer,len(val),key)
-                        nbColMultiRow = max(c0,nbColMultiRow)
-                        print 'HI HERE ',nbColMultiRow,c0
-                    else:
-                        mat[cursum][c0] = '%s%s'%(firstspacer,key)
-                    hlines[cursum] = max(hlines[cursum],c0+1)
-                    # print 'HEREEEEEEEEEEEEE',c0,hlines[cursum]
-                    
-                    spacer = (len(mat[cursum][c0]))*' '
-                    # print 'a%sa'%spacer
-                    for i in range(1,len(val)):
-                        # print 'here ',cursum+i-1
-                        mat[cursum+i][c0] = firstspacer+spacer+'PLACEHOLDER'
-                        hlines[cursum+i] = max(hlines[cursum+i],c0+2)
-                    # print key,val
-                    # print c0+1,cursum
-                    print 'HHANDLE %d'%handleNode(val,c0+1,cursum,mat,nbColMultiRow)
-                    # nbColMultiRow = max(nbColMultiRow,handleNode(val,c0+1,cursum,mat,nbColMultiRow))
-                    cursum += len(val)
-            return nbColMultiRow
-        def placeClines(mat):
-            for i,line in enumerate(mat):
-                tmp = 0
-                while 'PLACEHOLDER' in line[tmp]:
-                    mat[i][tmp] = mat[i][tmp].replace('PLACEHOLDER','')
-                    tmp+=1
-                mat[i][0] =  '\\cline{%d-%d}%s'%(tmp+1,len(line),line[0])
-                mat[i][-1] += '\\\\' 
-                # for x in line:
-                #     print 'PLACEHOLDER' in x,i
-                # print mat[i].index(next((x for x in line if 'PLACEHOLDER' in x),line[0]))+1
-        #create matrix
-        mat = [[str() for _ in xrange(len(self.data[0]))] for _ in xrange(len(self.data)-1)]
-        self.nbColMultiRow = handleNode(self.graph,0,0,mat,0)+1
-        print 'NBMIUL',self.nbColMultiRow
-        tmp = '\n\\begin{tabular}{'+'|c'*self.nbColMultiRow+'||'+'r|'*(len(self.data[0])-self.nbColMultiRow+1)+'}'
-        # print mat
-        # print hlines
-        placeClines(mat)
-        # print mat
-        # print '\n'.join(''.join(l) for l in mat)+'\\hline'
-        self.currentTex += tmp+'\n'+'\n'.join(''.join(l) for l in mat)+'\\hline'
-        self.currentTex += "\n\\end{tabular}\n\\end{center}\n\\caption{CAPTION}\n\\label{tab:tab1}\n\\end{table}\n"
-
-        print self.currentTex
-
-    def generateLatex2(self):
-        hlines = [1 for _ in xrange(len(self.data))]
-        def handleNode(node,c0,i0,mat,nbColMultiRow):
-            print node
-            firstspacer = ' & ' if c0>0 else ''
-            if node[0] and isinstance(node[0],list):
-                node = node[0]
-                for i,no in enumerate(node):
+            firstspacer = ' & ' if c0>0 else '' # should be optimized
+            if node[0] and isinstance(node[0],list): # if leaf of graph treat as line of values
+                for i,no in enumerate(node[0]):
                     for c,val in zip(range(c0+1,len(mat[0])),no[1:]):
                         mat[i+i0][c]= ' & '+val
-                    print i0,c0 , 'low recursion' 
                     mat[i+i0][c0]= firstspacer+no[0]
             else:
                 cursum = i0
-                print'NODEEEEEE', node
-                print type(node)
-                for key,val in node[0].iteritems():
-                    print i0,c0
-                    print key,val
-                    val,lenval=val
+                for key,val in node[0].iteritems(): # iterating over sons
+                    val,lenval = val # simplicating futher use of val
                     if lenval > 1:
                         mat[cursum][c0] = '%s\\multirow{%d}{*}{%s}'%(firstspacer,lenval,key)
-                        nbColMultiRow = max(c0,nbColMultiRow)
-                        # print 'HI HERE ',nbColMultiRow,c0
+                        nbColMultiRow = max(c0,nbColMultiRow) # knowing automatic max number of multirows
                     else:
-                        mat[cursum][c0] = '%s%s'%(firstspacer,key)
-                    hlines[cursum] = max(hlines[cursum],c0+1)
-                    # print 'HEREEEEEEEEEEEEE',c0,hlines[cursum]
+                        mat[cursum][c0] = '{}{}'.format(firstspacer,key)
                     
                     spacer = (len(mat[cursum][c0]))*' '
-                    # print 'a%sa'%spacer
                     for i in range(1,lenval):
-                        # print 'here ',cursum+i-1
-                        mat[cursum+i][c0] = firstspacer+spacer+'PLACEHOLDER'
-                        hlines[cursum+i] = max(hlines[cursum+i],c0+2) #REMOVE ME
-                    # print key,val
-                    # print c0+1,cursum
-                    print 'HHANDLE %d'%handleNode((val,lenval),c0+1,cursum,mat,nbColMultiRow)
-                    # nbColMultiRow = max(nbColMultiRow,handleNode(val,c0+1,cursum,mat,nbColMultiRow))
+                        mat[cursum+i][c0] = firstspacer+spacer+'PLACEHOLDER' # place holder for future indentation. to be fixed
+                    nbColMultiRow = max(nbColMultiRow,handleNode((val,lenval),c0+1,cursum,mat,nbColMultiRow))
                     cursum += lenval
             return nbColMultiRow
 
         def placeClines(mat):
+            """
+                placing lines of table acording to placeholders
+            """
             for i,line in enumerate(mat):
                 tmp = 0
                 while 'PLACEHOLDER' in line[tmp]:
                     mat[i][tmp] = mat[i][tmp].replace('PLACEHOLDER','')
                     tmp+=1
-                mat[i][0] =  '\\cline{%d-%d}%s'%(tmp+1,len(line),line[0])
+                mat[i][0] = '\\cline{%d-%d}%s'%(tmp+1,len(line),line[0])
                 mat[i][-1] += '\\\\' 
 
-        #create matrix
         mat = [[str() for _ in xrange(len(self.data[0]))] for _ in xrange(len(self.data)-1)]
-
         self.nbColMultiRow = handleNode(self.graph,0,0,mat,0)+1
-
-        print 'NBMIUL',self.nbColMultiRow
-
         placeClines(mat)
-        tmp = '\n\\begin{tabular}{'+'|c'*self.nbColMultiRow+'||'+'r|'*(len(self.data[0])-self.nbColMultiRow+1)+'}'
-        self.currentTex += tmp+'\n\\hline '+' & '.join(self.data[0])+'\\\\\n'+'\n'.join(''.join(l) for l in mat)+'\\hline'
-        self.currentTex += "\n\\end{tabular}\n\\end{center}\n\\caption{CAPTION}\n\\label{tab:tab1}\n\\end{table}\n"
+        # creating LaTeX code
+        self.latex = '\\begin{table}[H]\n\\begin{center}\n\\begin{tabular}{'+'|c'*self.nbColMultiRow+'||'+'r|'*(len(self.data[0])-self.nbColMultiRow+1)+'}\n\\hline '+' & '.join(self.data[0])+'\\\\\n'+'\n'.join(''.join(l) for l in mat)+"\\hline\n\\end{tabular}\n\\end{center}\n\\caption{CAPTION}\n\\label{tab:tab1}\n\\end{table}\n"
 
-        print self.currentTex
-
-        # self.formatColumn(self.data[1:],1)
-        #concatenate matrix
-"""
-    def calculateColumsNumber(self):
-        self.nc = len(self.data[0])
-        if self.args.columns:
-            self.currentTex+='\n\\begin{tabular}{'+'|c'*self.columns[0]+'||'+'r|'*(nc-self.columns[0]+1)'|}'
-        else:
-            self.currentTex+='\n\\begin{tabular}{'+'|c'*self.columns[0]+'||'+'r|'*(nc-self.columns[0]+1)'}'
-
-"""
-
-"""
-
-\begin{table}[H]
-\begin{center}
-\begin{tabular}{|c||r|r|}
-\hline
-taille & PI & MeanItPI\\
-\cline{1-3}\multirow{1}{*}{(10,10)} & 0.176 & 14.00\\
-\cline{1-3}\multirow{1}{*}{(10,15)} & 0.437 & 20.14\\
-\cline{1-3}\multirow{1}{*}{(15,20)} & 1.486 & 19.43\\
-\hline
-\\end{tabular}\n\\end{center}\n\\caption{Temps d’exécution moyen pour 7 instances aléatoires en fonction de la taille de l'instance}\n\\label{tab:tab2}\n\\end{adjustwidth}\n\\end{table}\n
-"""
 if __name__ == '__main__':
     Table(sys.argv)
