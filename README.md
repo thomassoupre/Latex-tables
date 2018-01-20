@@ -26,6 +26,6 @@
 
     Don't forget to \usepackage{multirow}
 
-the test data returns this table 
+the test data returns this table using the *-t* option
 
 ![Image of Yaktocat](latex.png)
