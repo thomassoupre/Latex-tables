@@ -15,7 +15,7 @@ class Table(object):
         parser.add_argument('filename', metavar='path', type=str, nargs=1,
                             help='path to data')
         parser.add_argument('-c','--columns', metavar='N', type=int, nargs=1,
-                    help='range of columns which you want to make multirows')
+                    help='the first N columns which you want to make multirows with, by default all.')
         parser.add_argument('-t','--truncate', metavar='T', type=int, nargs='?',const = -1,
                     help='truncate to T values after the decimal point, by default automatic formating to minimal number of zeros')
         parser.add_argument('-s','--save', metavar='savePath', type=str, nargs=1,
